@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/hashicorp/vault/sdk/database/newdbplugin"
+
 	"github.com/hashicorp/vault/sdk/database/dbplugin"
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/helper/strutil"
@@ -115,6 +117,41 @@ func (b *databaseBackend) pathCredsCreateRead() framework.OperationFunc {
 		resp.Secret.MaxTTL = role.MaxTTL
 		return resp, nil
 	}
+}
+
+func createUser(ctx context.Context, dbw databaseVersionWrapper, createStatements, rollbackStatements []string, displayName, roleName string, expiration time.Time, passwordPolicy string) (username, password string, err error) {
+	if dbw.database != nil {
+		return createNewUser(ctx, dbw, createStatements, rollbackStatements, displayName, roleName, expiration, passwordPolicy)
+	}
+	return createLegacyUser(ctx, dbw, createStatements, rollbackStatements, displayName, roleName, expiration)
+}
+
+func createNewUser(ctx context.Context, dbw databaseVersionWrapper, createStatements, rollbackStatements []string, displayName, roleName string, expiration time.Time, passwordPolicy string) (username, password string, err error) {
+
+	req := newdbplugin.NewUserRequest{
+		UsernameConfig: newdbplugin.UsernameMetadata{
+			DisplayName: displayName,
+			RoleName:    roleName,
+		},
+		Statements: newdbplugin.Statements{
+			Commands: createStatements,
+		},
+		RollbackStatements: newdbplugin.Statements{
+			Commands: rollbackStatements,
+		},
+		Password:   password,
+		Expiration: expiration,
+	}
+
+	resp, err := dbw.database.NewUser(ctx, req)
+	if err != nil {
+		return "", "", err
+	}
+	return resp.Username, password, nil
+}
+
+func createLegacyUser(ctx context.Context, dbw databaseVersionWrapper, createStatements, rollbackStatements []string, displayName, roleName string, expiration time.Time) (username, password string, err error) {
+
 }
 
 func (b *databaseBackend) pathStaticCredsRead() framework.OperationFunc {
